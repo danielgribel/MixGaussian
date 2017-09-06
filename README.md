@@ -24,4 +24,5 @@ mix-gaussian.R script creates mixture of gaussians instances. We can specify the
 -- Q: number of points per cluster (cardinality of each group)
 
 OBS 1: Requires mvtnorm package
-OBS 2: Uncomment lines in the very end of the script for file writing 
+
+OBS 2: For writing the output file, please uncomment the lines in the very end of the script
