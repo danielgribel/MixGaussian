@@ -1,157 +1,81 @@
+# Generate a Mixture of Gaussians distributions with fixed standard deviation in each dimension (spherical clusters)
+# and calculate the C-separability index according to 'Learning mixtures of Gaussians' (S Dasgupta, 1999)
 require(mvtnorm)
 
-set.seed(1607)
+set.seed(4450)
 
-# number of runs (number of instances generated)
-nbRuns <- 1
+# The range for components means
+minMean <- 0.0
+maxMean <- 5.0
 
-# the range for the means: from $minMean to $maxMean
-minMean <- 0
-maxMean <- 25
+# The range for components standard deviations
+minCov <- 0.0
+maxCov <- 1.0
 
-# the range for the stdev: from $minCov to $maxCov
-minCov <- 1
-maxCov <- 10
+# Number of Gaussian components (clusters)
+m <- 5
 
-# degree of separability
-c <- 1.0
-
-# number of clusters (distributions)
-m <- 10
-
-# number of features
+# Number of features (dimensions)
 d <- 2
 
-# number of data points
-nbPoints <- 1000
+# Number of data points
+n <- 1000
 
-# number of points per cluster (distribution) -- or cardinality of each group
-Q <- nbPoints/m
+# C-separability parameter
+c <- 1.0
 
-eps <- 0.02
+data <- matrix(nrow = n, ncol = d)
 
-it <- 1
-nbValild <- 0
+# Randomly generate the means for each component
+means <- replicate(m, sample(seq(from = minMean, to = maxMean, by = 0.0001), size = d, replace = TRUE))
 
-labels <- c()
+# Randomly generate the standard deviation for each component
+stdev <- sample(seq(from = minCov, to = maxCov, by = 0.0001), size = m, replace = TRUE)
 
-stt <- 1
-end <- Q
+# Randomly choose the component that generates a data point 
+label <- sample(seq(from = 1, to = m, by = 1), size = n, replace = TRUE)
 
-for(i in 1:m) {
-	labels[stt:end] <- i
-	stt <- end + 1
-	end <- end + Q
+for(i in 1:n) {
+	# Generate a data point from corresponding component
+	data[i,] <- rmvnorm(1, means[,label[i]], diag(stdev[label[i]], d))
 }
 
-# while(it <= nbRuns && nbValild < 10) {
-while(it <= nbRuns) {
-	means = matrix(nrow=d, ncol=m)
-	stdev = matrix(nrow=d, ncol=m)
-	data <- matrix(nrow=m*Q, ncol=d)
+# Generate all pairs for components indices
+pairs <- combn(m, 2)
 
-	# randomly generate the standard deviation for each cluster (gaussian distribution)
-	st <- sample(seq(from = minCov, to = maxCov), size = m, replace = TRUE)
+cSeparability <- 0
+
+# For each pair of components check if they are C-separable according to (S Dasgupta, 1999)
+for(j in 1:ncol(pairs)) {
 	
-	q <- 1
+    # Get index of the 1st component
+	c1 <- pairs[,j][1]
 
-	for (i in 1:m) {
-		# randomly generate the means for each cluster (gaussian distribution) and each feature inside the cluster
-		means[,i] <- sample(seq(from = minMean, to = maxMean), size = d, replace = TRUE)
-		
-		# generate the same standard dev for each feature of the gaussian distribution
-		stdev[,i] <- runif(d, st[i], st[i])
-		
-		# stdev[,i] <- sample(seq(from = maxCov, to = maxCov), size = d, replace = TRUE) # standard dev for gaussian distributions
-		
-		# generate the gaussian distribution with means and co-variance matrix
-		P <- rmvnorm(Q, means[,i], diag(stdev[,i], d))
-		
-		# append the points generated in each gaussian to the entire dataset
-		for(q in 1:Q) {
-			data[(i-1)*Q + q,] <- P[q,]	
-		}
-	}
-
-	# get min and max for 1st and 2nd features to generate the plot
-	xmin <- min(data[,1])
-	xmax <- max(data[,1])
-	ymin <- min(data[,2])
-	ymax <- max(data[,2])
-
-	plot(data, xlim = c(xmin, xmax), ylim = c(ymin, ymax), pch = 19, col = "gray40")
-
-	# generate all pairs by indeces
-	pairs <- combn(m, 2)
+    # Get index of the 2nd component
+	c2 <- pairs[,j][2]
 	
-	cont <- 0
-	contNext <- 0
+	# Get the max eigenvalue of the 1st co-variance
+	lambda1 <- max(eigen(diag(stdev[c1], d))$values)
 
-	# for each pair check if they are c-separable
-	for(j in 1:ncol(pairs)) {
+	# Get the max eigenvalue of the 2nd co-variance
+	lambda2 <- max(eigen(diag(stdev[c2], d))$values)
+	
+	# Left side of the C-separability inequality
+	dist <- sqrt(sum((means[,c1] - means[,c2]) ^ 2))
 		
-		a <- pairs[,j][1]
-		b <- pairs[,j][2]
-
-		# get the max eigenvalue of the co-variance matrix of cluster 1
-		lambda1 <- max(eigen(diag(stdev[,a], d))$values)
-
-		# get the max eigenvalue of the co-variance matrix of cluster 2
-		lambda2 <- max(eigen(diag(stdev[,b], d))$values)
+	# Right side of the C-separability inequality
+	sepThreshold <- c * sqrt(d * max(lambda1, lambda2))
 		
-		maxLambda <- max(lambda1, lambda2)
-
-		# left side of the c-separability inequality
-		leftSide <- sqrt(sum((means[,a] - means[,b]) ^ 2))
-		
-		# right side of the c-separability inequality
-		rigthSide <- c * sqrt(d * maxLambda)
-		
-		# right side of the next c-separability inequality
-		nextRigthSize <- (c+0.5) * sqrt(d * maxLambda)
-
-		# check if pairs are c-separable
-		if(leftSide >= rigthSide) {
-			cont = cont+1
-			# check if the pairs are c-separable also for the next c
-			if(leftSide >= nextRigthSize) {
-				contNext = contNext + 1
-			}
-		}
+	# Check if the pair of components is C-separable
+	if(dist >= sepThreshold) {
+		cSeparability = cSeparability + 1
 	}
-
-	# get the proportion of pairs accomplishing the c-separability for current and next degree
-	result <- c(1.0*cont/ncol(pairs), 1.0*contNext/ncol(pairs))
-
-	if(result[1] + eps > 1 && result[2] < 1) {
-		# save file
-		nbValild <- nbValild + 1
-		
-		outputFile <- "~/src/hg/hg-means/data/gaussian/G"
-		labelsFile <- "~/src/hg/hg-means/labels/gaussian/G"
-
-		cStr <- toString(c)
-		cStr <- gsub("\\.", "", cStr)
-		
-		fileDesc <- ""
-		fileDesc <- paste(fileDesc, toString(m), sep="-")
-		fileDesc <- paste(fileDesc, toString(d), sep="-")
-		fileDesc <- paste(fileDesc, toString(nbValild), sep="-")
-		fileDesc <- paste(fileDesc, ".txt", sep="")
-
-		outputFile <- paste(outputFile, fileDesc, sep="")
-		labelsFile <- paste(labelsFile, fileDesc, sep="")
-
-		# Write data to file
-		# write.table(paste(toString(nbPoints), toString(d)), file = outputFile, sep = " ", quote = FALSE, row.names = FALSE, col.names = FALSE)
-		# write.table(data, file = outputFile, sep = " ", row.names = FALSE, col.names = FALSE, append=TRUE)
-
-		# Write labels to file
-		# write.table(labels, file = labelsFile, sep = " ", row.names = FALSE, col.names = FALSE)
-		# print(paste("Saving", outputFile , sep=" "))
-	}
-
-	it <- it+1
-	# print the proportion of pairs of clusters that are c-separable and (c+0.5)-separable
-	print(result)
 }
+
+# Percentage of pair of components satisfying the C-separability threshold
+# 1.0 means that the mixture is completly separable regarding C
+cSeparability <- cSeparability/ncol(pairs)
+
+print(cSeparability)
+
+plot(data, col = label, pch = 19)
